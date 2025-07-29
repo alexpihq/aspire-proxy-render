@@ -38,3 +38,11 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Aspire proxy running on port ${PORT}`);
 });
+app.get("/ip", async (req, res) => {
+  try {
+    const ipRes = await axios.get("https://api.ipify.org?format=json");
+    res.json({ egress_ip: ipRes.data.ip });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch IP" });
+  }
+});
