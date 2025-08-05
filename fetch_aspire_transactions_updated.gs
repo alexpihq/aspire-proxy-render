@@ -18,11 +18,43 @@ function fetchAspireTransactionsToSheet() {
     Logger.log("📡 Отправляем запрос на прокси...");
     Logger.log("🔗 URL: " + proxyUrl);
     
-    const response = UrlFetchApp.fetch(proxyUrl, options);
-    const code = response.getResponseCode();
-    const body = response.getContentText();
+    // Retry логика для 502 ошибок
+    let response;
+    let code;
+    let body;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        response = UrlFetchApp.fetch(proxyUrl, options);
+        code = response.getResponseCode();
+        body = response.getContentText();
+        
+        Logger.log("📥 Код ответа: " + code);
+        
+        if (code === 502) {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            Logger.log(`🔄 Получена 502 ошибка. Ждем 10 секунд и пробуем снова (попытка ${retryCount}/${maxRetries})...`);
+            Utilities.sleep(10000); // Ждем 10 секунд
+            continue;
+          }
+        }
+        
+        break; // Выходим из цикла если не 502 или достигли максимума попыток
+        
+      } catch (fetchError) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          Logger.log(`🔄 Ошибка запроса. Ждем 10 секунд и пробуем снова (попытка ${retryCount}/${maxRetries})...`);
+          Utilities.sleep(10000);
+          continue;
+        }
+        throw fetchError;
+      }
+    }
 
-    Logger.log("📥 Код ответа: " + code);
     Logger.log("📥 Размер ответа: " + body.length + " символов");
 
     if (code !== 200) {
@@ -40,19 +72,31 @@ function fetchAspireTransactionsToSheet() {
     if (!sheet) sheet = ss.insertSheet(sheetName);
     else sheet.clear();
 
-    // Улучшенные заголовки с дополнительными полями
+    // Обновленные заголовки с новыми колонками
     const headers = [
       'Date', 'Amount (USD)', 'Currency', 'Type', 'Status', 'Reference', 
-      'Description', 'Counterparty', 'Balance (USD)', 'Category', 'Card Number'
+      'Description', 'Counterparty', 'Balance (USD)', 'Category', 'Card Number',
+      'Outflow', 'Inflow', 'Payee', 'Memo'
     ];
     sheet.appendRow(headers);
 
     // Обработка каждой транзакции
     transactions.forEach((tx, index) => {
       try {
+        const amountUSD = (tx.amount || 0) / 100; // Конвертируем в доллары
+        
+        // Вычисляем Outflow и Inflow
+        let outflow = '';
+        let inflow = '';
+        if (amountUSD < 0) {
+          outflow = Math.abs(amountUSD); // Положительное значение для оттока
+        } else if (amountUSD > 0) {
+          inflow = amountUSD; // Положительное значение для притока
+        }
+        
         const row = [
           tx.datetime || '',
-          (tx.amount || 0) / 100, // Делим на 100 для конвертации из центов в доллары
+          amountUSD,
           tx.currency_code || '',
           tx.type || '',
           tx.status || '',
@@ -61,7 +105,11 @@ function fetchAspireTransactionsToSheet() {
           tx.counterparty_name || '',
           (tx.balance || 0) / 100, // Также делим баланс на 100
           tx.additional_info?.spend_category || '',
-          tx.additional_info?.card_number || ''
+          tx.additional_info?.card_number || '',
+          outflow, // Outflow (положительное значение для оттока)
+          inflow,  // Inflow (положительное значение для притока)
+          tx.counterparty_name || '', // Payee
+          tx.description || '' // Memo
         ];
         
         sheet.appendRow(row);
@@ -73,17 +121,6 @@ function fetchAspireTransactionsToSheet() {
         Logger.log(`❌ Ошибка обработки транзакции ${index}: ${txError.message}`);
       }
     });
-
-    // Добавляем информацию о метаданных
-    if (data.metadata) {
-      const metaSheet = ss.getSheetByName('Metadata') || ss.insertSheet('Metadata');
-      metaSheet.clear();
-      metaSheet.appendRow(['Параметр', 'Значение']);
-      metaSheet.appendRow(['Всего транзакций', data.metadata.total]);
-      metaSheet.appendRow(['Текущая страница', data.metadata.current_page]);
-      metaSheet.appendRow(['Транзакций на странице', data.metadata.per_page]);
-      metaSheet.appendRow(['Запрос ID', data.metadata['aspire-request-id']]);
-    }
 
     Logger.log(`✅ Загружено транзакций: ${transactions.length}`);
     Logger.log(`📊 Всего транзакций в системе: ${data.metadata?.total || 'неизвестно'}`);
@@ -163,11 +200,42 @@ function fetchAllTransactions() {
   try {
     Logger.log("📡 Получаем все транзакции...");
     
-    const response = UrlFetchApp.fetch(proxyUrl, options);
-    const code = response.getResponseCode();
-    const body = response.getContentText();
-
-    Logger.log("📥 Код ответа: " + code);
+    // Retry логика для 502 ошибок
+    let response;
+    let code;
+    let body;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        response = UrlFetchApp.fetch(proxyUrl, options);
+        code = response.getResponseCode();
+        body = response.getContentText();
+        
+        Logger.log("📥 Код ответа: " + code);
+        
+        if (code === 502) {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            Logger.log(`🔄 Получена 502 ошибка. Ждем 10 секунд и пробуем снова (попытка ${retryCount}/${maxRetries})...`);
+            Utilities.sleep(10000); // Ждем 10 секунд
+            continue;
+          }
+        }
+        
+        break; // Выходим из цикла если не 502 или достигли максимума попыток
+        
+      } catch (fetchError) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          Logger.log(`🔄 Ошибка запроса. Ждем 10 секунд и пробуем снова (попытка ${retryCount}/${maxRetries})...`);
+          Utilities.sleep(10000);
+          continue;
+        }
+        throw fetchError;
+      }
+    }
 
     if (code !== 200) {
       throw new Error(`Не удалось получить транзакции. Код ответа: ${code}, Ответ: ${body}`);
@@ -188,16 +256,28 @@ function fetchAllTransactions() {
 
     const headers = [
       'Account ID', 'Date', 'Amount (USD)', 'Currency', 'Type', 'Status', 
-      'Reference', 'Description', 'Counterparty', 'Balance (USD)', 'Category'
+      'Reference', 'Description', 'Counterparty', 'Balance (USD)', 'Category',
+      'Outflow', 'Inflow', 'Payee', 'Memo'
     ];
     sheet.appendRow(headers);
 
     transactions.forEach((tx, index) => {
       try {
+        const amountUSD = (tx.amount || 0) / 100; // Конвертируем в доллары
+        
+        // Вычисляем Outflow и Inflow
+        let outflow = '';
+        let inflow = '';
+        if (amountUSD < 0) {
+          outflow = Math.abs(amountUSD); // Положительное значение для оттока
+        } else if (amountUSD > 0) {
+          inflow = amountUSD; // Положительное значение для притока
+        }
+        
         const row = [
           tx.account_id || '',
           tx.datetime || '',
-          (tx.amount || 0) / 100, // Делим на 100 для конвертации из центов в доллары
+          amountUSD,
           tx.currency_code || '',
           tx.type || '',
           tx.status || '',
@@ -205,7 +285,11 @@ function fetchAllTransactions() {
           tx.counterparty_name || '',
           tx.counterparty_name || '',
           (tx.balance || 0) / 100, // Также делим баланс на 100
-          tx.additional_info?.spend_category || ''
+          tx.additional_info?.spend_category || '',
+          outflow, // Outflow (положительное значение для оттока)
+          inflow,  // Inflow (положительное значение для притока)
+          tx.counterparty_name || '', // Payee
+          tx.description || '' // Memo
         ];
         
         sheet.appendRow(row);
