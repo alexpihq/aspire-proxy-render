@@ -56,22 +56,71 @@ app.get('/aspire', async (req, res) => {
     
     console.log('🌐 Making request to Aspire API with params:', { account_id, start_date });
     
-    const response = await axios.get('https://api.aspireapp.com/public/v1/transactions', {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0'
-      },
-      params: {
-        account_id,
-        start_date
+    // Функция для получения одной страницы
+    async function fetchPage(page = 1) {
+      const response = await axios.get('https://api.aspireapp.com/public/v1/transactions', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0'
+        },
+        params: {
+          account_id,
+          start_date,
+          page
+        }
+      });
+      return response.data;
+    }
+
+    // Получаем первую страницу для получения метаданных
+    const firstPage = await fetchPage(1);
+    console.log('✅ First page loaded, total transactions:', firstPage.metadata?.total);
+    
+    // Если есть только одна страница, возвращаем как есть
+    if (!firstPage.metadata?.next_page_url) {
+      console.log('📄 Single page, returning as is');
+      res.json(firstPage);
+      return;
+    }
+
+    // Собираем все страницы
+    const allTransactions = [...firstPage.data];
+    let currentPage = 2;
+    const totalPages = Math.ceil(firstPage.metadata.total / firstPage.metadata.per_page);
+
+    console.log(`📚 Fetching ${totalPages} pages total...`);
+
+    while (currentPage <= totalPages) {
+      try {
+        console.log(`📄 Fetching page ${currentPage}/${totalPages}...`);
+        const pageData = await fetchPage(currentPage);
+        allTransactions.push(...pageData.data);
+        currentPage++;
+        
+        // Небольшая задержка между запросами
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error(`❌ Error fetching page ${currentPage}:`, error.message);
+        break;
+      }
+    }
+
+    console.log(`✅ All pages loaded, total transactions: ${allTransactions.length}`);
+
+    // Возвращаем объединенные данные
+    res.json({
+      data: allTransactions,
+      metadata: {
+        ...firstPage.metadata,
+        total: allTransactions.length,
+        current_page: 1,
+        per_page: allTransactions.length,
+        from: 1,
+        to: allTransactions.length
       }
     });
 
-    console.log('✅ Aspire API response status:', response.status);
-    console.log('📊 Response data keys:', Object.keys(response.data || {}));
-    
-    res.json(response.data);
   } catch (error) {
     console.error('❌ Aspire API Error:', error.response?.status, error.message);
     console.error('❌ Error details:', {
