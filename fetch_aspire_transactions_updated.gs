@@ -125,9 +125,49 @@ function fetchAspireTransactionsToSheet() {
     Logger.log(`✅ Загружено транзакций: ${transactions.length}`);
     Logger.log(`📊 Всего транзакций в системе: ${data.metadata?.total || 'неизвестно'}`);
     
+    // Очищаем Counterparty от лишнего текста после FACEBK
+    Logger.log("🧹 Очищаем Counterparty от лишнего текста...");
+    cleanCounterpartyColumn(sheet);
+    
   } catch (e) {
     Logger.log("❌ Ошибка: " + e.message);
     Logger.log("❌ Stack trace: " + e.stack);
+  }
+}
+
+// Функция для очистки колонки Counterparty
+function cleanCounterpartyColumn(sheet) {
+  try {
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return; // Только заголовки
+    
+    // Находим колонку Counterparty (8-я колонка, индекс 7)
+    const counterpartyColumn = 8;
+    const payeeColumn = 13; // Payee колонка (14-я, индекс 13)
+    
+    let cleanedCount = 0;
+    
+    for (let row = 2; row <= lastRow; row++) { // Начинаем со 2-й строки (после заголовков)
+      const counterpartyValue = sheet.getRange(row, counterpartyColumn).getValue();
+      const payeeValue = sheet.getRange(row, payeeColumn).getValue();
+      
+      if (counterpartyValue && counterpartyValue.toString().startsWith('FACEBK')) {
+        // Очищаем Counterparty - оставляем только FACEBK
+        sheet.getRange(row, counterpartyColumn).setValue('FACEBK');
+        cleanedCount++;
+      }
+      
+      if (payeeValue && payeeValue.toString().startsWith('FACEBK')) {
+        // Очищаем Payee - оставляем только FACEBK
+        sheet.getRange(row, payeeColumn).setValue('FACEBK');
+        cleanedCount++;
+      }
+    }
+    
+    Logger.log(`✅ Очищено ${cleanedCount} ячеек с FACEBK`);
+    
+  } catch (error) {
+    Logger.log(`❌ Ошибка при очистке Counterparty: ${error.message}`);
   }
 }
 
@@ -299,6 +339,10 @@ function fetchAllTransactions() {
     });
 
     Logger.log(`✅ Загружено всех транзакций: ${transactions.length}`);
+    
+    // Очищаем Counterparty от лишнего текста после FACEBK
+    Logger.log("🧹 Очищаем Counterparty от лишнего текста...");
+    cleanCounterpartyColumn(sheet);
     
   } catch (e) {
     Logger.log("❌ Ошибка: " + e.message);
