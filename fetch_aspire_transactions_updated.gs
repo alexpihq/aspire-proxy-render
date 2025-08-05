@@ -109,7 +109,7 @@ function fetchAspireTransactionsToSheet() {
           outflow, // Outflow (положительное значение для оттока)
           inflow,  // Inflow (положительное значение для притока)
           tx.counterparty_name || '', // Payee
-          tx.description || '' // Memo
+          tx.reference || '' // Memo (используем reference вместо description)
         ];
         
         sheet.appendRow(row);
@@ -289,7 +289,7 @@ function fetchAllTransactions() {
           outflow, // Outflow (положительное значение для оттока)
           inflow,  // Inflow (положительное значение для притока)
           tx.counterparty_name || '', // Payee
-          tx.description || '' // Memo
+          tx.reference || '' // Memo (используем reference вместо description)
         ];
         
         sheet.appendRow(row);
