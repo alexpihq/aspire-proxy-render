@@ -3,9 +3,22 @@ const axios = require('axios');
 const app = express();
 app.use(express.json());
 
+// Кэш для токена
+let tokenCache = {
+  access_token: null,
+  expires_at: null
+};
+
 // Функция для получения access token
 async function getAccessToken() {
+  // Проверяем, есть ли валидный токен в кэше
+  if (tokenCache.access_token && tokenCache.expires_at && Date.now() < tokenCache.expires_at) {
+    console.log('✅ Using cached token');
+    return tokenCache.access_token;
+  }
+
   try {
+    console.log('🔄 Getting new access token...');
     const response = await axios.post('https://api.aspireapp.com/public/v1/login', {
       grant_type: 'client_credentials',
       client_id: process.env.ASPIRE_CLIENT_ID,
@@ -16,6 +29,14 @@ async function getAccessToken() {
       }
     });
     
+    // Кэшируем токен с учетом времени жизни
+    const expiresIn = parseInt(response.data.expires_in) * 1000; // конвертируем в миллисекунды
+    tokenCache = {
+      access_token: response.data.access_token,
+      expires_at: Date.now() + expiresIn - 60000 // вычитаем 1 минуту для безопасности
+    };
+    
+    console.log(`✅ Token cached, expires in ${Math.round(expiresIn/1000)}s`);
     return response.data.access_token;
   } catch (error) {
     console.error('❌ Token Error:', error.response?.status, error.message);
@@ -26,9 +47,14 @@ async function getAccessToken() {
 app.get('/aspire', async (req, res) => {
   const { account_id, start_date } = req.query;
 
+  console.log('📡 Request received:', { account_id, start_date });
+
   try {
     // Получаем access token
     const accessToken = await getAccessToken();
+    console.log('🔑 Token obtained, length:', accessToken.length);
+    
+    console.log('🌐 Making request to Aspire API with params:', { account_id, start_date });
     
     const response = await axios.get('https://api.aspireapp.com/public/v1/transactions', {
       headers: {
@@ -42,12 +68,24 @@ app.get('/aspire', async (req, res) => {
       }
     });
 
+    console.log('✅ Aspire API response status:', response.status);
+    console.log('📊 Response data keys:', Object.keys(response.data || {}));
+    
     res.json(response.data);
   } catch (error) {
     console.error('❌ Aspire API Error:', error.response?.status, error.message);
+    console.error('❌ Error details:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      url: error.config?.url,
+      params: error.config?.params
+    });
+    
     res.status(error.response?.status || 500).json({
       error: error.message,
-      status: error.response?.status || 500
+      status: error.response?.status || 500,
+      details: error.response?.data
     });
   }
 });
